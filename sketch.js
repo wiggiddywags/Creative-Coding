@@ -1,5 +1,6 @@
 const canvasSketch = require('canvas-sketch');
 const { lerp } = require('canvas-sketch-util/math');
+const random = require('canvas-sketch-util/random');
 
 
 
@@ -11,7 +12,7 @@ const settings = {
 const sketch = () => {
   const createGrid = () => {
     const points = [];
-    const count = 5;
+    const count = 50;
     for (let x = 0; x < count; x++) {
       for (let y = 0; y < count; y++) {
         //UVSpace: working in nums between 0 and 1
@@ -23,13 +24,19 @@ const sketch = () => {
     return points;
   };
 
-  const points = createGrid();
-  const margin = 400;
+  //const points = createGrid();
+  //const points = createGrid().filter(() => Math.random() > 0.5);
+
+  //unique identifer
+  random.setSeed("512");
+  //random.setSeed('asdf');
+  const points = createGrid().filter(() => random.value() > 0.5);
+  const margin = 300;
 
   //console.log(points);
 
   return ({ context, width, height }) => {
-    context.fillStyle = 'white';
+    context.fillStyle = 'pink';
     context.fillRect(0, 0, width, height);
 
     points.forEach(([u, v]) => {
@@ -39,9 +46,9 @@ const sketch = () => {
       const y = lerp(margin, height - margin, v);
 
       context.beginPath();
-      context.arc(x, y, 100, 0, Math.PI * 2, false);
-      context.strokeStyle = 'black';
-      context.lineWidth = 20;
+      context.arc(x, y, 2, 0, Math.PI * 2, false);
+      context.strokeStyle = "white";
+      context.lineWidth = 10;
       context.stroke();
     });
 
