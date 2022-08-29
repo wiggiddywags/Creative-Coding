@@ -1,72 +1,159 @@
-// Ensure ThreeJS is in global scope for the 'examples/'
-global.THREE = require("three");
+global.THREE = require('three');
 
-// Include any additional ThreeJS examples below
-require("three/examples/js/controls/OrbitControls");
+const canvasSketch = require('canvas-sketch');
+const random = require('canvas-sketch-util/random');
+const palettes = require('nice-color-palettes');
+const eases = require('eases');
+const BezierEasing = require('bezier-easing');
 
-const canvasSketch = require("canvas-sketch");
 
 const settings = {
-  // Make the loop animated
-  animate: true, 
+  animate: true,
+  dimensions: [ 1024, 1280 ],
+  fps: 24, //24 for gifs
+  duration: 16,
   // Get a WebGL canvas rather than 2D
-  context: "webgl",
+  context: 'webgl',
   // Turn on MSAA
-  attributes: { antialias: true}
+  attributes: { antialias: true }
 };
 
-const sketch = ({ context }) => {
+const sketch = ({ context, width, height }) => {
   // Create a renderer
   const renderer = new THREE.WebGLRenderer({
-    canvas: context.canvas
+    context
   });
 
   // WebGL background color
-  renderer.setClearColor("#000", 1);
+  renderer.setClearColor('hsl(0, 0%, 95%)', 1);
 
-  // Setup a camera
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
-  camera.position.set(0, 0, -4);
-  camera.lookAt(new THREE.Vector3());
-
-  // Setup camera controller
-  const controls = new THREE.OrbitControls(camera, context.canvas);
+  // Setup a camera, we will update its settings on resize
+  const camera = new THREE.OrthographicCamera();
 
   // Setup your scene
   const scene = new THREE.Scene();
 
-  // Setup a geometry
-  const geometry = new THREE.SphereGeometry(1, 32, 16);
+  // Get a palette for our scene
+  const palette = random.pick(palettes);
 
-  // Setup a material
-  const material = new THREE.MeshNormalMaterial({
-    color: "red",
-    wireframe: true
+  // Randomize mesh attributes
+  const randomizeMesh = (mesh) => {
+    // Choose a random point in a 3D volume between -1..1
+    const point = new THREE.Vector3(
+      random.value() * 2 - 1,
+      random.value() * 2 - 1,
+      random.value() * 2 - 1
+    );
+    mesh.position.copy(point);
+    mesh.originalPosition = mesh.position.clone();
+
+    // Choose a color for the mesh material
+    mesh.material.color.set(random.pick(palette));
+
+    // Randomly scale each axis
+    mesh.scale.set(
+      random.gaussian(),
+      random.gaussian(),
+      random.gaussian()
+    );
+
+    // Do more random scaling on each axis
+    if (random.chance(0.5)) mesh.scale.x *= random.gaussian();
+    if (random.chance(0.5)) mesh.scale.y *= random.gaussian();
+    if (random.chance(0.5)) mesh.scale.z *= random.gaussian();
+
+    // Further scale each object
+    mesh.scale.multiplyScalar(random.gaussian() * 0.25);
+  };
+
+  // A group that will hold all of our cubes
+  const container = new THREE.Group();
+
+  // Re-use the same Geometry across all our cubes
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+
+  // The # of cubes to create
+  const chunks = 50;
+
+  // Create each cube and return a THREE.Mesh
+  const meshes = Array.from(new Array(chunks)).map(() => {
+    // Basic "unlit" material with no depth
+    const material = new THREE.MeshStandardMaterial({
+      // Avoid popping
+      depthTest: false,
+      color: random.pick(palette)
+    });
+
+    // Create the mesh
+    const mesh = new THREE.Mesh(geometry, material);
+
+    // Randomize it
+    randomizeMesh(mesh);
+
+    return mesh;
   });
 
-  // Setup a mesh with geometry + material
-  const mesh = new THREE.Mesh(geometry, material);
-  scene.add(mesh);
+  // Add meshes to the group
+  meshes.forEach(m => container.add(m));
+
+  // Then add the group to the scene
+  scene.add(container);
+
+  scene.add(new THREE.AmbientLight('hsl(0,40%,70%)'));
+
+  const light = new THREE.DirectionalLight('white', .5);
+  light.position.set(2, 2, 4);
+  scene.add(light);
+
+  const easeFn = BezierEasing(0.67, 0.03, 0.29, 0.99);
 
   // draw each frame
   return {
     // Handle resize events here
-    resize({ pixelRatio, viewportWidth, viewportHeight }) {
+    resize ({ pixelRatio, viewportWidth, viewportHeight }) {
       renderer.setPixelRatio(pixelRatio);
-      renderer.setSize(viewportWidth, viewportHeight, false);
-      camera.aspect = viewportWidth / viewportHeight;
+      renderer.setSize(viewportWidth, viewportHeight);
+
+      // Setup an isometric perspective
+      const aspect = viewportWidth / viewportHeight;
+      const zoom = 1.85;
+      camera.left = -zoom * aspect;
+      camera.right = zoom * aspect;
+      camera.top = zoom;
+      camera.bottom = -zoom;
+      camera.near = -100;
+      camera.far = 100;
+      camera.position.set(zoom, zoom, zoom);
+      camera.lookAt(new THREE.Vector3());
+
+      // Update camera properties
       camera.updateProjectionMatrix();
     },
-    // Update & render your scene here
-    render({ time }) {
-      mesh.rotation.y = time * 0.1;
-      mesh.rotation.x = time * -0.1;
-      controls.update();
+    // And render events here
+    render ({ playhead, time, deltaTime, width, height }) {
+      //scene.rotation.y = time * 0.2;
+      //scene.rotation.z = playhead * Math.PI * 2;
+      //const t = Math.sin(playhead * Math.PI * 2) * 2;
+      const t = Math.sin(playhead * Math.PI * 2);
+      //scene.rotation.z = eases.expoInOut(t);
+      scene.rotation.z = easeFn(t);
+      // Animate each mesh with noise
+      meshes.forEach(mesh => {
+        const f = 0.5;
+        mesh.position.x = mesh.originalPosition.x + 0.25 * random.noise3D(
+          mesh.originalPosition.x * f,
+          mesh.originalPosition.y * f,
+          mesh.originalPosition.z * f,
+          //playhead * 0.25
+          time * 0.25
+        );
+      });
+
+      // Draw scene with our camera
       renderer.render(scene, camera);
     },
-    // Dispose of events & renderer for cleaner hot-reloading
-    unload() {
-      controls.dispose();
+    // Dispose of WebGL context (optional)
+    unload () {
       renderer.dispose();
     }
   };
